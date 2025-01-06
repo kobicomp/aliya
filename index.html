@@ -453,7 +453,12 @@
          this.lockedAssignments = new Set(); // עליות נעולות
          this.mitpallelimList = [];          // רשימת המתפללים המלאה
      }
-
+     getOrderedMitpallelimList() {
+         return Array.from(this.temporaryOrder.entries())
+             .sort((a, b) => a[0] - b[0])
+             .map(([_, name]) => this.mitpallelimList.find(m => m.name === name))
+             .filter(m => m);
+     }
      // טעינת רשימת המתפללים
      async loadMitpallelim() {
          try {
@@ -1044,81 +1049,125 @@
      return row;
  }
  async function checkAliyot() {
-   try {
-       console.log('מתחיל בדיקת עליות');
-       if (!orderManager) {
-           orderManager = new AliyotOrderManager();
-       }
-       
-       const initSuccess = await orderManager.initialize();
-       if (!initSuccess) {
-           console.error('אתחול נכשל');
-           return;
-       }
-
-       dateInput = document.getElementById('dateInput');
-       if (!dateInput.value) {
-           console.log('לא נבחר תאריך');
-           return;
-       }
-
-       const selectedDate = new Date(dateInput.value);
-       const hebcalInfo = await getHebcalInfo(dateInput.value);
-       const aliyotInfo = determineAliyotCount(hebcalInfo);
-       currentParasha = await getParasha(dateInput.value);
-
-       // עדכון טבלת מידע
-       const resultBody = document.getElementById('resultBody');
-       resultBody.innerHTML = '';
-       const row = resultBody.insertRow();
-       row.insertCell(0).textContent = selectedDate.toLocaleDateString('he-IL');
-       row.insertCell(1).textContent = hebcalInfo ? hebcalInfo.hebrewDate : 'לא זוהה';
-       row.insertCell(2).textContent = `יום ${hebrewDays[hebcalInfo.dayOfWeek]}`;
-       row.insertCell(3).textContent = currentParasha;
-       row.insertCell(4).textContent = aliyotInfo.totalAliyot;
-       row.insertCell(5).textContent = aliyotInfo.aliyotTypes.join(', ');
-       row.insertCell(6).textContent = aliyotInfo.reason;
-
-       // שיבוץ אוטומטי של כל העליות
-       console.log('מתחיל שיבוץ אוטומטי');
-       const assignments = await orderManager.autoAssignAliyot(aliyotInfo.aliyotTypes);
-       console.log('שיבוץ אוטומטי הושלם:', assignments);
-
-       // עדכון הממשק
-       const aliyotInputs = document.getElementById('aliyotInputs');
-       aliyotInputs.innerHTML = '';
-
-       // יצירת שורות עבור פעולות בהיכל
-       console.log('יוצר שורות לפעולות בהיכל');
-       for (const action of TEMPLE_ACTIONS) {
-           const assignedPerson = assignments.get(action);
-           console.log(`יוצר שורה לפעולה ${action}, משובץ:`, assignedPerson);
-           const row = createAliyahAssignmentRow(action, assignedPerson, orderManager);
-           aliyotInputs.appendChild(row);
-       }
-
-       // יצירת שורות עבור עליות לתורה
-       console.log('יוצר שורות לעליות לתורה');
-       for (const type of aliyotInfo.aliyotTypes) {
-           const assignedPerson = assignments.get(type);
-           console.log(`יוצר שורה לעלייה ${type}, משובץ:`, assignedPerson);
-           const row = createAliyahAssignmentRow(type, assignedPerson, orderManager);
-           aliyotInputs.appendChild(row);
-       }
-
-       // הצגת האלמנטים
-       document.getElementById('resultTable').style.display = 'table';
-       document.getElementById('aliyotContainer').style.display = 'block';
-       document.getElementById('selected-date-display').textContent =
-           `פרשת ${currentParasha}, ${hebcalInfo ? hebcalInfo.hebrewDate : 'לא זוהה'}`;
-
-       console.log('בדיקת עליות הושלמה בהצלחה');
-
-   } catch (error) {
-       console.error('שגיאה בבדיקת עליות:', error);
-   }
-}
-
+     try {
+         console.log('מתחיל בדיקת עליות');
+         
+         // אתחול מנהל העליות
+         if (!orderManager) {
+             orderManager = new AliyotOrderManager();
+         }
+         
+         const initSuccess = await orderManager.initialize();
+         if (!initSuccess) {
+             console.error('אתחול נכשל');
+             return;
+         }
+ 
+         // בדיקת תאריך נבחר
+         dateInput = document.getElementById('dateInput');
+         if (!dateInput.value) {
+             alert('נא לבחור תאריך');
+             return;
+         }
+ 
+         // קבלת מידע על התאריך
+         const selectedDate = new Date(dateInput.value);
+         const hebcalInfo = await getHebcalInfo(dateInput.value);
+         if (!hebcalInfo) {
+             alert('שגיאה בקבלת מידע על התאריך העברי');
+             return;
+         }
+ 
+         // קביעת העליות והפרשה
+         const aliyotInfo = determineAliyotCount(hebcalInfo);
+         currentParasha = await getParasha(dateInput.value);
+ 
+         // עדכון טבלת המידע
+         const resultTable = document.getElementById('resultTable');
+         const resultBody = document.getElementById('resultBody');
+         resultBody.innerHTML = '';
+         resultTable.style.display = 'table';
+ 
+         const row = resultBody.insertRow();
+         row.insertCell(0).textContent = selectedDate.toLocaleDateString('he-IL');
+         row.insertCell(1).textContent = hebcalInfo.hebrewDate;
+         row.insertCell(2).textContent = `יום ${hebrewDays[hebcalInfo.dayOfWeek]}`;
+         row.insertCell(3).textContent = currentParasha;
+         row.insertCell(4).textContent = aliyotInfo.totalAliyot;
+         row.insertCell(5).textContent = aliyotInfo.aliyotTypes.join(', ');
+         row.insertCell(6).textContent = aliyotInfo.reason;
+ 
+         // שיבוץ אוטומטי
+         console.log('מתחיל שיבוץ אוטומטי');
+         const assignments = await orderManager.autoAssignAliyot(aliyotInfo.aliyotTypes);
+         console.log('שיבוץ אוטומטי הושלם:', assignments);
+ 
+         // הצגת מיכל העליות
+         const aliyotContainer = document.getElementById('aliyotContainer');
+         aliyotContainer.style.display = 'block';
+ 
+         // יצירת שורות עבור פעולות בהיכל
+         console.log('יוצר שורות לפעולות בהיכל');
+         const templeActionsList = document.getElementById('templeActionsList');
+         templeActionsList.innerHTML = '';
+ 
+         for (const action of TEMPLE_ACTIONS) {
+             const assignedPerson = assignments.get(action);
+             console.log(`פעולה: ${action}, משובץ:`, assignedPerson);
+             const row = createAliyahAssignmentRow(action, assignedPerson, orderManager);
+             templeActionsList.appendChild(row);
+         }
+ 
+         // יצירת שורות עבור עליות לתורה
+         console.log('יוצר שורות לעליות לתורה');
+         const aliyotInputs = document.getElementById('aliyotInputs');
+         aliyotInputs.innerHTML = '';
+ 
+         for (const type of aliyotInfo.aliyotTypes) {
+             const assignedPerson = assignments.get(type);
+             console.log(`עלייה: ${type}, משובץ:`, assignedPerson);
+             const row = createAliyahAssignmentRow(type, assignedPerson, orderManager);
+             aliyotInputs.appendChild(row);
+         }
+ 
+         // עדכון תצוגת התאריך הנבחר
+         const dateDisplay = document.getElementById('selected-date-display');
+         dateDisplay.textContent = `פרשת ${currentParasha}, ${hebcalInfo.hebrewDate}`;
+ 
+         // רענון רשימת המתפללים
+         await refreshCongregantsList();
+ 
+         console.log('בדיקת עליות הושלמה בהצלחה');
+         
+     } catch (error) {
+         console.error('שגיאה בבדיקת עליות:', error);
+         alert('אירעה שגיאה בבדיקת העליות');
+     }
+ }
+ async function submitToGoogleSheets(name, position) {
+     try {
+         const controller = new AbortController();
+         const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 שניות timeout
+ 
+         const formData = new FormData();
+         formData.append(ORDER_FORM_ENTRIES.name, name);
+         formData.append(ORDER_FORM_ENTRIES.position, position.toString());
+ 
+         await fetch(ORDER_FORM_URL, {
+             method: 'POST',
+             mode: 'no-cors',
+             body: formData,
+             signal: controller.signal
+         });
+ 
+         clearTimeout(timeoutId);
+     } catch (error) {
+         if (error.name === 'AbortError') {
+             console.log('הבקשה נכשלה עקב timeout');
+         }
+         throw error;
+     }
+ }
  
        // אתחול
        document.addEventListener('DOMContentLoaded', async () => {
