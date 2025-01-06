@@ -4,7 +4,7 @@
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width, initial-scale=1.0">
    <title>בדיקת עליות לתורה</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
    <style>
        @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;700&display=swap');
 
@@ -453,25 +453,25 @@
          this.lockedAssignments = new Set(); // עליות נעולות
          this.mitpallelimList = [];          // רשימת המתפללים המלאה
      }
- 
+
      // טעינת רשימת המתפללים
      async loadMitpallelim() {
          try {
              console.log('טוען רשימת מתפללים מ:', MITPALLELIM_CSV);
              const response = await fetch(MITPALLELIM_CSV);
              if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-             
+
              const text = await response.text();
              const result = Papa.parse(text, {
                  header: true,
                  skipEmptyLines: true
              });
- 
+
              this.mitpallelimList = result.data.map(row => ({
                  name: row['Name'] || row['שם'] || row[Object.keys(row)[0]], // גמיש לשמות עמודות שונים
                  type: row['Type'] || row['סוג'] || row[Object.keys(row)[1]]  // גמיש לשמות עמודות שונים
              })).filter(m => m.name && m.type); // סינון רשומות לא תקינות
- 
+
              console.log('נטענו', this.mitpallelimList.length, 'מתפללים');
              return this.mitpallelimList;
          } catch (error) {
@@ -479,13 +479,14 @@
              throw error;
          }
      }
- 
+     // נעדכן את פונקציית initialize:
      async initialize() {
          try {
              console.log('מתחיל אתחול מנהל העליות');
              
-             // טעינת רשימת המתפללים
-             await this.loadMitpallelim();
+             // קודם כל טוען את רשימת המתפללים
+             this.mitpallelimList = await this.loadMitpallelim();
+             console.log('נטענו', this.mitpallelimList.length, 'מתפללים:', this.mitpallelimList);
              
              // טעינת הסדר הקיים
              console.log('טוען סדר עליות מ:', ORDER_CSV);
@@ -497,11 +498,11 @@
                  header: true,
                  skipEmptyLines: true
              });
- 
+     
              // איפוס המפות הקיימות
              this.orderList.clear();
              this.temporaryOrder.clear();
- 
+     
              // מילוי הסדר מהנתונים שהתקבלו
              result.data.forEach((row, index) => {
                  const name = row['Name'] || row['שם'] || row[Object.keys(row)[0]];
@@ -511,22 +512,16 @@
                      this.orderList.set(position, name);
                  }
              });
- 
+     
              // אם אין סדר קיים, יוצר סדר התחלתי
              if (this.orderList.size === 0) {
                  this.mitpallelimList.forEach((mitpallel, index) => {
                      this.orderList.set(index + 1, mitpallel.name);
                  });
              }
- 
+     
              // העתקת הסדר הנוכחי לרשימה הזמנית
              this.temporaryOrder = new Map(this.orderList);
-             
-             console.log('אתחול הושלם:', {
-                 orderSize: this.orderList.size,
-                 tempOrderSize: this.temporaryOrder.size,
-                 firstFewEntries: Array.from(this.orderList.entries()).slice(0, 5)
-             });
              
              return true;
          } catch (error) {
@@ -534,50 +529,94 @@
              throw error;
          }
      }
- 
+     
+     // נעדכן את פונקציית createAliyahAssignmentRow:
+     function createAliyahAssignmentRow(type, assignedPerson, orderManager) {
+         const row = document.createElement('div');
+         row.className = 'aliyah-row';
+         
+         // תווית סוג העלייה
+         const label = document.createElement('label');
+         label.textContent = `${type}:`;
+         row.appendChild(label);
+     
+         // תצוגת המתפלל המשובץ
+         const assigneeDisplay = document.createElement('div');
+         assigneeDisplay.className = 'assignee-display';
+         assigneeDisplay.textContent = assignedPerson ? assignedPerson.name : 'לא נמצא מתפלל מתאים';
+         row.appendChild(assigneeDisplay);
+     
+         // מכיל את כל הכפתורים
+         const buttonsContainer = document.createElement('div');
+         buttonsContainer.className = 'buttons-container';
+     
+         // תפריט בחירה חופשית
+         const freeChoiceSelect = document.createElement('select');
+         freeChoiceSelect.className = 'congregant-select';
+         freeChoiceSelect.innerHTML = '<option value="">בחירה חופשית</option>';
+     
+         console.log('רשימת מתפללים בעת יצירת השורה:', orderManager.mitpallelimList);
+     
+         // מילוי אפשרויות הבחירה
+         orderManager.mitpallelimList
+             .filter(m => orderManager.isEligibleForAliya(m, type))
+             .forEach(m => {
+                 const option = document.createElement('option');
+                 option.value = m.name;
+                 option.textContent = m.name;
+                 freeChoiceSelect.appendChild(option);
+             });
+     
+         buttonsContainer.appendChild(freeChoiceSelect);
+     
+         // הוספת שאר הכפתורים והלוגיקה כמו קודם...
+         row.appendChild(buttonsContainer);
+         return row;
+     }
+     
      // בדיקת התאמה לסוג העלייה
      isEligibleForAliya(mitpallel, type) {
          if (!mitpallel || this.assignedToday.has(mitpallel.name)) {
              return false;
          }
- 
+
          if (TEMPLE_ACTIONS.includes(type)) {
              return true;
          }
- 
+
          switch(type) {
              case 'כהן': return mitpallel.type === 'כהן';
              case 'לוי': return mitpallel.type === 'לוי';
              default: return mitpallel.type === 'ישראל';
          }
      }
- 
+
      // קבלת המתפלל הבא בתור
      getNextEligibleForAliya(type, alreadyAssigned = []) {
          const positions = Array.from(this.temporaryOrder.keys()).sort((a, b) => a - b);
-         
+
          for (const pos of positions) {
              const name = this.temporaryOrder.get(pos);
              const mitpallel = this.mitpallelimList.find(m => m.name === name);
-             
+
              if (!mitpallel) continue;
              if (this.assignedToday.has(name)) continue;
              if (alreadyAssigned.includes(name)) continue;
-             
+
              if (this.isEligibleForAliya(mitpallel, type)) {
                  return { mitpallel, position: pos };
              }
          }
-         
+
          return null;
      }
- 
+
      // שיבוץ אוטומטי של כל העליות
      async autoAssignAliyot(aliyotTypes) {
          try {
              const assignments = new Map();
              const assignedPeople = [];
- 
+
              // פעולות בהיכל
              for (const action of TEMPLE_ACTIONS) {
                  const next = this.getNextEligibleForAliya(action, assignedPeople);
@@ -586,7 +625,7 @@
                      assignedPeople.push(next.mitpallel.name);
                  }
              }
- 
+
              // עליות לתורה
              for (const aliyaType of aliyotTypes) {
                  const next = this.getNextEligibleForAliya(aliyaType, assignedPeople);
@@ -595,90 +634,90 @@
                      assignedPeople.push(next.mitpallel.name);
                  }
              }
- 
+
              return assignments;
          } catch (error) {
              console.error('שגיאה בשיבוץ אוטומטי:', error);
              return new Map();
          }
      }
- 
+
      // שיבוץ עלייה והזזה לסוף
      async assignAliyah(name, type) {
          try {
              if (this.lockedAssignments.has(type)) {
                  throw new Error('העלייה כבר ננעלה');
              }
- 
+
              const newPosition = this.getLastPosition() + 1;
              await this.submitToGoogleSheets(name, newPosition);
-             
+
              this.temporaryOrder.set(newPosition, name);
              this.lockedAssignments.add(type);
              this.assignedToday.add(name);
- 
+
              return true;
          } catch (error) {
              console.error('שגיאה בשיבוץ:', error);
              return false;
          }
      }
- 
+
      // טיפול בהיעדרות
      async handleAbsence(name) {
          const currentPos = this.findPersonPosition(name);
          if (currentPos === null) return false;
- 
+
          try {
              const positions = Array.from(this.temporaryOrder.keys()).sort((a, b) => a - b);
              const currentIndex = positions.indexOf(currentPos);
              const newIndex = Math.min(currentIndex + 5, positions.length - 1);
              const newPosition = positions[newIndex];
- 
+
              await this.submitToGoogleSheets(name, newPosition);
              this.movePersonInTemporaryOrder(name, newPosition);
- 
+
              return true;
          } catch (error) {
              console.error('שגיאה בטיפול בהיעדרות:', error);
              return false;
          }
      }
- 
+
      // בחירה חופשית
      async handleFreeChoice(originalName, newName, type) {
          if (this.lockedAssignments.has(type)) {
              throw new Error('העלייה כבר ננעלה');
          }
- 
+
          try {
              const newPosition = this.getLastPosition() + 1;
              await this.submitToGoogleSheets(newName, newPosition);
-             
+
              this.temporaryOrder.set(newPosition, newName);
              this.assignedToday.add(newName);
              this.lockedAssignments.add(type);
- 
+
              return true;
          } catch (error) {
              console.error('שגיאה בבחירה חופשית:', error);
              return false;
          }
      }
- 
+
      // פונקציות עזר
      getLastPosition() {
          const positions = Array.from(this.temporaryOrder.keys());
          return positions.length > 0 ? Math.max(...positions) : 0;
      }
- 
+
      findPersonPosition(name) {
          for (const [pos, personName] of this.temporaryOrder.entries()) {
              if (personName === name) return pos;
          }
          return null;
      }
- 
+
      movePersonInTemporaryOrder(name, newPosition) {
          const oldPosition = this.findPersonPosition(name);
          if (oldPosition !== null) {
@@ -686,13 +725,13 @@
          }
          this.temporaryOrder.set(newPosition, name);
      }
- 
+
      // שליחה לגוגל שיטס
      async submitToGoogleSheets(name, position) {
          const formData = new FormData();
          formData.append(ORDER_FORM_ENTRIES.name, name);
          formData.append(ORDER_FORM_ENTRIES.position, position.toString());
- 
+
          await fetch(ORDER_FORM_URL, {
              method: 'POST',
              mode: 'no-cors',
@@ -905,12 +944,12 @@
        async function refreshCongregantsList() {
      const list = document.getElementById('congregantsList');
      list.innerHTML = '<div class="loading">טוען רשימת מתפללים...</div>';
- 
+
      try {
          // טעינת רשימת המתפללים
          const mitpallelim = await orderManager.loadMitpallelim();
          list.innerHTML = '';
- 
+
          mitpallelim.forEach(congregant => {
              const card = document.createElement('div');
              card.className = 'congregant-card';
@@ -928,66 +967,82 @@
      }
  }
 
-       async function checkAliyot() {
-     try {
-         console.log('מתחיל בדיקת עליות');
-         orderManager = new AliyotOrderManager();
-         await orderManager.initialize();
+ async function checkAliyot() {
+   try {
+       console.log('מתחיל בדיקת עליות');
+       if (!orderManager) {
+           orderManager = new AliyotOrderManager();
+       }
+       
+       const initSuccess = await orderManager.initialize();
+       if (!initSuccess) {
+           console.error('אתחול נכשל');
+           return;
+       }
 
-         dateInput = document.getElementById('dateInput');
-         if (!dateInput.value) {
-             console.log('לא נבחר תאריך');
-             return;
-         }
+       dateInput = document.getElementById('dateInput');
+       if (!dateInput.value) {
+           console.log('לא נבחר תאריך');
+           return;
+       }
 
-         const selectedDate = new Date(dateInput.value);
-         const hebcalInfo = await getHebcalInfo(dateInput.value);
-         const aliyotInfo = determineAliyotCount(hebcalInfo);
-         currentParasha = await getParasha(dateInput.value);
+       const selectedDate = new Date(dateInput.value);
+       const hebcalInfo = await getHebcalInfo(dateInput.value);
+       const aliyotInfo = determineAliyotCount(hebcalInfo);
+       currentParasha = await getParasha(dateInput.value);
 
-         // עדכון טבלת מידע
-         const resultBody = document.getElementById('resultBody');
-         resultBody.innerHTML = '';
-         const row = resultBody.insertRow();
-         row.insertCell(0).textContent = selectedDate.toLocaleDateString('he-IL');
-         row.insertCell(1).textContent = hebcalInfo ? hebcalInfo.hebrewDate : 'לא זוהה';
-         row.insertCell(2).textContent = `יום ${hebrewDays[hebcalInfo.dayOfWeek]}`;
-         row.insertCell(3).textContent = currentParasha;
-         row.insertCell(4).textContent = aliyotInfo.totalAliyot;
-         row.insertCell(5).textContent = aliyotInfo.aliyotTypes.join(', ');
-         row.insertCell(6).textContent = aliyotInfo.reason;
+       // עדכון טבלת מידע
+       const resultBody = document.getElementById('resultBody');
+       resultBody.innerHTML = '';
+       const row = resultBody.insertRow();
+       row.insertCell(0).textContent = selectedDate.toLocaleDateString('he-IL');
+       row.insertCell(1).textContent = hebcalInfo ? hebcalInfo.hebrewDate : 'לא זוהה';
+       row.insertCell(2).textContent = `יום ${hebrewDays[hebcalInfo.dayOfWeek]}`;
+       row.insertCell(3).textContent = currentParasha;
+       row.insertCell(4).textContent = aliyotInfo.totalAliyot;
+       row.insertCell(5).textContent = aliyotInfo.aliyotTypes.join(', ');
+       row.insertCell(6).textContent = aliyotInfo.reason;
 
-         // שיבוץ אוטומטי של כל העליות
-         const assignments = await orderManager.autoAssignAliyot(aliyotInfo.aliyotTypes);
+       // שיבוץ אוטומטי של כל העליות
+       console.log('מתחיל שיבוץ אוטומטי');
+       const assignments = await orderManager.autoAssignAliyot(aliyotInfo.aliyotTypes);
+       console.log('שיבוץ אוטומטי הושלם:', assignments);
 
-         // עדכון הממשק
-         const aliyotInputs = document.getElementById('aliyotInputs');
-         aliyotInputs.innerHTML = '';
+       // עדכון הממשק
+       const aliyotInputs = document.getElementById('aliyotInputs');
+       aliyotInputs.innerHTML = '';
 
-         // יצירת שורות עבור פעולות בהיכל
-         for (const action of TEMPLE_ACTIONS) {
-             const assignedPerson = assignments.get(action);
-             const row = createAliyahAssignmentRow(action, assignedPerson, orderManager);
-             aliyotInputs.appendChild(row);
-         }
+       // יצירת שורות עבור פעולות בהיכל
+       console.log('יוצר שורות לפעולות בהיכל');
+       for (const action of TEMPLE_ACTIONS) {
+           const assignedPerson = assignments.get(action);
+           console.log(`יוצר שורה לפעולה ${action}, משובץ:`, assignedPerson);
+           const row = createAliyahAssignmentRow(action, assignedPerson, orderManager);
+           aliyotInputs.appendChild(row);
+       }
 
-         // יצירת שורות עבור עליות לתורה
-         for (const type of aliyotInfo.aliyotTypes) {
-             const assignedPerson = assignments.get(type);
-             const row = createAliyahAssignmentRow(type, assignedPerson, orderManager);
-             aliyotInputs.appendChild(row);
-         }
+       // יצירת שורות עבור עליות לתורה
+       console.log('יוצר שורות לעליות לתורה');
+       for (const type of aliyotInfo.aliyotTypes) {
+           const assignedPerson = assignments.get(type);
+           console.log(`יוצר שורה לעלייה ${type}, משובץ:`, assignedPerson);
+           const row = createAliyahAssignmentRow(type, assignedPerson, orderManager);
+           aliyotInputs.appendChild(row);
+       }
 
-         // הצגת האלמנטים
-         document.getElementById('resultTable').style.display = 'table';
-         document.getElementById('aliyotContainer').style.display = 'block';
-         document.getElementById('selected-date-display').textContent =
-             `פרשת ${currentParasha}, ${hebcalInfo ? hebcalInfo.hebrewDate : 'לא זוהה'}`;
+       // הצגת האלמנטים
+       document.getElementById('resultTable').style.display = 'table';
+       document.getElementById('aliyotContainer').style.display = 'block';
+       document.getElementById('selected-date-display').textContent =
+           `פרשת ${currentParasha}, ${hebcalInfo ? hebcalInfo.hebrewDate : 'לא זוהה'}`;
 
-     } catch (error) {
-         console.error('שגיאה בבדיקת עליות:', error);
-     }
- }
+       console.log('בדיקת עליות הושלמה בהצלחה');
+
+   } catch (error) {
+       console.error('שגיאה בבדיקת עליות:', error);
+   }
+}
+
  function createAliyahAssignmentRow(type, assignedPerson, orderManager) {
      const row = document.createElement('div');
      row.className = 'aliyah-row';
