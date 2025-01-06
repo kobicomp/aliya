@@ -739,6 +739,123 @@
          });
      }
  }
+ function createAliyahAssignmentRow(type, assignedPerson, orderManager) {
+     const row = document.createElement('div');
+     row.className = 'aliyah-row';
+
+     // תווית סוג העלייה
+     const label = document.createElement('label');
+     label.textContent = `${type}:`;
+     row.appendChild(label);
+
+     // תצוגת המתפלל המשובץ
+     const assigneeDisplay = document.createElement('div');
+     assigneeDisplay.className = 'assignee-display';
+     assigneeDisplay.textContent = assignedPerson ? assignedPerson.name : 'לא נמצא מתפלל מתאים';
+     row.appendChild(assigneeDisplay);
+
+     // מכיל את כל הכפתורים
+     const buttonsContainer = document.createElement('div');
+     buttonsContainer.className = 'buttons-container';
+
+     // כפתור שיבוץ
+     const assignButton = document.createElement('button');
+     assignButton.textContent = 'שבץ';
+     assignButton.className = 'btn btn-primary';
+     assignButton.onclick = async () => {
+         if (assignedPerson) {
+             try {
+                 await orderManager.assignAliyah(assignedPerson.name, type);
+                 await submitAliyaToForm(dateInput.value, currentParasha, type, assignedPerson.name, assignButton);
+
+                 // נעילת השורה
+                 row.classList.add('locked');
+                 buttonsContainer.querySelectorAll('button, select').forEach(el => {
+                     if (el !== absentButton && el !== freeChoiceSelect) {
+                         el.disabled = true;
+                     }
+                 });
+
+             } catch (error) {
+                 console.error('שגיאה בשיבוץ:', error);
+                 alert('שגיאה בשיבוץ העלייה');
+             }
+         }
+     };
+     buttonsContainer.appendChild(assignButton);
+
+     // כפתור נעדר
+     const absentButton = document.createElement('button');
+     absentButton.textContent = 'נעדר';
+     absentButton.className = 'btn btn-danger';
+     absentButton.onclick = async () => {
+         if (assignedPerson) {
+             try {
+                 await orderManager.handleAbsence(assignedPerson.name);
+
+                 // קבלת המתפלל הבא בתור
+                 const nextPerson = orderManager.getNextEligible(type);
+                 if (nextPerson) {
+                     assignedPerson = nextPerson.congregant;
+                     assigneeDisplay.textContent = nextPerson.congregant.name;
+                 }
+
+                 // שחרור נעילת השורה אם הייתה נעולה
+                 row.classList.remove('locked');
+                 buttonsContainer.querySelectorAll('button, select').forEach(el => {
+                     el.disabled = false;
+                 });
+
+             } catch (error) {
+                 console.error('שגיאה בטיפול בהיעדרות:', error);
+                 alert('שגיאה בטיפול בהיעדרות');
+             }
+         }
+     };
+     buttonsContainer.appendChild(absentButton);
+
+     // תפריט בחירה חופשית
+     const freeChoiceSelect = document.createElement('select');
+     freeChoiceSelect.className = 'congregant-select';
+     freeChoiceSelect.innerHTML = '<option value="">בחירה חופשית</option>';
+
+     mitpallelimList
+         .filter(m => orderManager.isEligibleForType(m, type))
+         .forEach(m => {
+             const option = document.createElement('option');
+             option.value = m.name;
+             option.textContent = m.name;
+             freeChoiceSelect.appendChild(option);
+         });
+
+     freeChoiceSelect.onchange = async (event) => {
+         const selectedName = event.target.value;
+         if (selectedName && assignedPerson) {
+             try {
+                 await orderManager.handleFreeChoice(assignedPerson.name, selectedName, type);
+                 await submitAliyaToForm(dateInput.value, currentParasha, type, selectedName, freeChoiceSelect);
+
+                 assigneeDisplay.textContent = selectedName;
+
+                 // נעילת השורה
+                 row.classList.add('locked');
+                 buttonsContainer.querySelectorAll('button, select').forEach(el => {
+                     if (el !== absentButton) {
+                         el.disabled = true;
+                     }
+                 });
+
+             } catch (error) {
+                 console.error('שגיאה בבחירה חופשית:', error);
+                 alert('שגיאה בבחירה חופשית');
+             }
+         }
+     };
+     buttonsContainer.appendChild(freeChoiceSelect);
+
+     row.appendChild(buttonsContainer);
+     return row;
+ }
        // פונקציות עזר
        function showPanel(panelId) {
            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -967,123 +1084,7 @@
      }
  }
  
-  function createAliyahAssignmentRow(type, assignedPerson, orderManager) {
-      const row = document.createElement('div');
-      row.className = 'aliyah-row';
- 
-      // תווית סוג העלייה
-      const label = document.createElement('label');
-      label.textContent = `${type}:`;
-      row.appendChild(label);
- 
-      // תצוגת המתפלל המשובץ
-      const assigneeDisplay = document.createElement('div');
-      assigneeDisplay.className = 'assignee-display';
-      assigneeDisplay.textContent = assignedPerson ? assignedPerson.name : 'לא נמצא מתפלל מתאים';
-      row.appendChild(assigneeDisplay);
- 
-      // מכיל את כל הכפתורים
-      const buttonsContainer = document.createElement('div');
-      buttonsContainer.className = 'buttons-container';
- 
-      // כפתור שיבוץ
-      const assignButton = document.createElement('button');
-      assignButton.textContent = 'שבץ';
-      assignButton.className = 'btn btn-primary';
-      assignButton.onclick = async () => {
-          if (assignedPerson) {
-              try {
-                  await orderManager.assignAliyah(assignedPerson.name, type);
-                  await submitAliyaToForm(dateInput.value, currentParasha, type, assignedPerson.name, assignButton);
- 
-                  // נעילת השורה
-                  row.classList.add('locked');
-                  buttonsContainer.querySelectorAll('button, select').forEach(el => {
-                      if (el !== absentButton && el !== freeChoiceSelect) {
-                          el.disabled = true;
-                      }
-                  });
- 
-              } catch (error) {
-                  console.error('שגיאה בשיבוץ:', error);
-                  alert('שגיאה בשיבוץ העלייה');
-              }
-          }
-      };
-      buttonsContainer.appendChild(assignButton);
- 
-      // כפתור נעדר
-      const absentButton = document.createElement('button');
-      absentButton.textContent = 'נעדר';
-      absentButton.className = 'btn btn-danger';
-      absentButton.onclick = async () => {
-          if (assignedPerson) {
-              try {
-                  await orderManager.handleAbsence(assignedPerson.name);
- 
-                  // קבלת המתפלל הבא בתור
-                  const nextPerson = orderManager.getNextEligible(type);
-                  if (nextPerson) {
-                      assignedPerson = nextPerson.congregant;
-                      assigneeDisplay.textContent = nextPerson.congregant.name;
-                  }
- 
-                  // שחרור נעילת השורה אם הייתה נעולה
-                  row.classList.remove('locked');
-                  buttonsContainer.querySelectorAll('button, select').forEach(el => {
-                      el.disabled = false;
-                  });
- 
-              } catch (error) {
-                  console.error('שגיאה בטיפול בהיעדרות:', error);
-                  alert('שגיאה בטיפול בהיעדרות');
-              }
-          }
-      };
-      buttonsContainer.appendChild(absentButton);
- 
-      // תפריט בחירה חופשית
-      const freeChoiceSelect = document.createElement('select');
-      freeChoiceSelect.className = 'congregant-select';
-      freeChoiceSelect.innerHTML = '<option value="">בחירה חופשית</option>';
- 
-      mitpallelimList
-          .filter(m => orderManager.isEligibleForType(m, type))
-          .forEach(m => {
-              const option = document.createElement('option');
-              option.value = m.name;
-              option.textContent = m.name;
-              freeChoiceSelect.appendChild(option);
-          });
- 
-      freeChoiceSelect.onchange = async (event) => {
-          const selectedName = event.target.value;
-          if (selectedName && assignedPerson) {
-              try {
-                  await orderManager.handleFreeChoice(assignedPerson.name, selectedName, type);
-                  await submitAliyaToForm(dateInput.value, currentParasha, type, selectedName, freeChoiceSelect);
- 
-                  assigneeDisplay.textContent = selectedName;
- 
-                  // נעילת השורה
-                  row.classList.add('locked');
-                  buttonsContainer.querySelectorAll('button, select').forEach(el => {
-                      if (el !== absentButton) {
-                          el.disabled = true;
-                      }
-                  });
- 
-              } catch (error) {
-                  console.error('שגיאה בבחירה חופשית:', error);
-                  alert('שגיאה בבחירה חופשית');
-              }
-          }
-      };
-      buttonsContainer.appendChild(freeChoiceSelect);
- 
-      row.appendChild(buttonsContainer);
-      return row;
-  }
+
   
  async function checkAliyot() {
    try {
