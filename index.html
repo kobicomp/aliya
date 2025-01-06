@@ -1161,11 +1161,12 @@
      return row;
  }
        // אתחול
-       document.addEventListener('DOMContentLoaded', () => {
-           document.getElementById('dateInput').valueAsDate = new Date();
-           orderManager = new AliyotOrderManager();
-           refreshCongregantsList();
-       });
-   </script>
+       document.addEventListener('DOMContentLoaded', async () => {
+    document.getElementById('dateInput').valueAsDate = new Date();
+    orderManager = new AliyotOrderManager();
+    await orderManager.initialize();
+    await refreshCongregantsList();
+});
+  </script>
 </body>
 </html>
