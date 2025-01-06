@@ -360,6 +360,8 @@
                </div>
                <button class="btn" onclick="addCustomAliyah(orderManager)">הוסף עלייה נוספת</button>
            </div>
+           <button id="submitAllChangesBtn" class="btn" onclick="submitAllChanges()">שלח את כל השינויים</button>
+
        </div>
 
        <!-- פאנל מתפללים -->
@@ -446,274 +448,316 @@
 
        // מחלקת ניהול סדר העליות
        class AliyotOrderManager {
-     constructor() {
-         this.orderList = new Map();        // מיפוי מיקום -> שם
-         this.temporaryOrder = new Map();    // מיפוי זמני
-         this.assignedToday = new Set();     // שמות המשובצים היום
-         this.lockedAssignments = new Set(); // עליות נעולות
-         this.mitpallelimList = [];          // רשימת המתפללים המלאה
-     }
-     getOrderedMitpallelimList() {
-         return Array.from(this.temporaryOrder.entries())
-             .sort((a, b) => a[0] - b[0])
-             .map(([_, name]) => this.mitpallelimList.find(m => m.name === name))
-             .filter(m => m);
-     }
-     // טעינת רשימת המתפללים
-     async loadMitpallelim() {
-       try {
-           console.log('טוען רשימת מתפללים מ:', MITPALLELIM_CSV);
-           const response = await fetch(MITPALLELIM_CSV);
-           if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-           const text = await response.text();
-           console.log('התקבל טקסט:', text.substring(0, 200)); // לוג לבדיקה
-
-           const result = Papa.parse(text, {
-               header: false, // שינוי ל-false כדי לקבל מערך של שורות
-               skipEmptyLines: true
-           });
-
-           console.log('נתונים גולמיים:', result.data); // לוג לבדיקה
-
-           // מיפוי הנתונים כשאנחנו יודעים שהשם בעמודה B (אינדקס 1) והסוג בעמודה C (אינדקס 2)
-           this.mitpallelimList = result.data
-               .slice(1) // דילוג על שורת הכותרות
-               .map(row => ({
-                   name: row[1]?.trim(), // אינדקס 1 = עמודה B
-                   type: row[2]?.trim()  // אינדקס 2 = עמודה C
-               }))
-               .filter(m => m.name && m.type); // סינון רשומות לא תקינות
-
-           console.log('רשימת מתפללים מעובדת:', this.mitpallelimList);
-           console.log('נטענו', this.mitpallelimList.length, 'מתפללים');
-
-           return this.mitpallelimList;
-       } catch (error) {
-           console.error('שגיאה בטעינת רשימת מתפללים:', error);
-           throw error;
+       constructor() {
+           this.orderList = new Map();        // מיפוי מיקום -> שם: סדר העליות הקבוע
+           this.temporaryOrder = new Map();    // מיפוי זמני לשינויים
+           this.assignedToday = new Set();     // שמות המשובצים היום
+           this.lockedAssignments = new Set(); // עליות נעולות
+           this.changes = [];                  // מעקב אחר שינויים לשליחה מרוכזת
+           this.mitpallelimList = [];          // רשימת המתפללים
        }
-   }
-     // נעדכן את פונקציית initialize:
-     async initialize() {
-       try {
-           console.log('מתחיל אתחול מנהל העליות');
-           
-           // טעינת רשימת המתפללים
-           this.mitpallelimList = await this.loadMitpallelim();
-           console.log('נטענו', this.mitpallelimList.length, 'מתפללים');
-           
-           // טעינת הסדר הקיים
-           console.log('טוען סדר עליות מ:', ORDER_CSV);
-           const response = await fetch(ORDER_CSV);
-           if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-           
-           const text = await response.text();
-           const result = Papa.parse(text, {
-               header: false,
-               skipEmptyLines: true
-           });
    
-           // איפוס המפות הקיימות
-           this.orderList.clear();
-           this.temporaryOrder.clear();
-   
-           // מילוי הסדר מהנתונים שהתקבלו
-           result.data.slice(1).forEach((row, index) => {
-               const name = row[1]?.trim();    // עמודה B
-               const position = parseInt(row[2]?.trim()) || index + 1;  // עמודה C או מיקום לפי סדר
+       async loadMitpallelim() {
+           try {
+               console.log('טוען רשימת מתפללים מ:', MITPALLELIM_CSV);
+               const response = await fetch(MITPALLELIM_CSV);
+               if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                
-               if (name) {
-                   this.orderList.set(position, name);
-               }
-           });
-   
-           // אם אין סדר קיים, יוצר סדר התחלתי
-           if (this.orderList.size === 0) {
-               this.mitpallelimList.forEach((mitpallel, index) => {
-                   this.orderList.set(index + 1, mitpallel.name);
+               const text = await response.text();
+               console.log('התקבל טקסט:', text.substring(0, 200)); // לוג לבדיקה
+               
+               const result = Papa.parse(text, {
+                   header: false, // שינוי ל-false כדי לקבל מערך של שורות
+                   skipEmptyLines: true
                });
+   
+               console.log('נתונים גולמיים:', result.data); // לוג לבדיקה
+               
+               // מיפוי הנתונים - שם בעמודה B (אינדקס 1) וסוג בעמודה C (אינדקס 2)
+               this.mitpallelimList = result.data
+                   .slice(1) // דילוג על שורת הכותרות
+                   .map(row => ({
+                       name: row[1]?.trim(), // אינדקס 1 = עמודה B
+                       type: row[2]?.trim()  // אינדקס 2 = עמודה C
+                   }))
+                   .filter(m => m.name && m.type); // סינון רשומות לא תקינות
+   
+               console.log('רשימת מתפללים מעובדת:', this.mitpallelimList);
+               console.log('נטענו', this.mitpallelimList.length, 'מתפללים');
+               
+               return this.mitpallelimList;
+           } catch (error) {
+               console.error('שגיאה בטעינת רשימת מתפללים:', error);
+               throw error;
+           }
+       }
+   
+       async initialize() {
+           try {
+               console.log('מתחיל אתחול מנהל העליות');
+               
+               // טעינת רשימת המתפללים
+               this.mitpallelimList = await this.loadMitpallelim();
+               console.log('נטענו', this.mitpallelimList.length, 'מתפללים');
+               
+               // טעינת הסדר הקיים
+               console.log('טוען סדר עליות מ:', ORDER_CSV);
+               const response = await fetch(ORDER_CSV);
+               if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+               
+               const text = await response.text();
+               const result = Papa.parse(text, {
+                   header: false,
+                   skipEmptyLines: true
+               });
+   
+               // איפוס המפות הקיימות
+               this.orderList.clear();
+               this.temporaryOrder.clear();
+   
+               // מילוי הסדר מהנתונים שהתקבלו
+               result.data.slice(1).forEach((row, index) => {
+                   const name = row[1]?.trim();    // עמודה B
+                   const position = parseInt(row[2]?.trim()) || (index + 1);  // עמודה C או מיקום לפי סדר
+                   
+                   if (name) {
+                       this.orderList.set(position, name);
+                   }
+               });
+   
+               // אם אין סדר קיים, יוצר סדר התחלתי
+               if (this.orderList.size === 0) {
+                   this.mitpallelimList.forEach((mitpallel, index) => {
+                       this.orderList.set(index + 1, mitpallel.name);
+                   });
+               }
+   
+               // העתקת הסדר הנוכחי לרשימה הזמנית
+               this.temporaryOrder = new Map(this.orderList);
+               
+               console.log('אתחול הושלם:', {
+                   orderSize: this.orderList.size,
+                   tempOrderSize: this.temporaryOrder.size,
+                   firstFewEntries: Array.from(this.orderList.entries()).slice(0, 5)
+               });
+               
+               return true;
+           } catch (error) {
+               console.error('שגיאה באתחול:', error);
+               throw error;
+           }
+       }
+   
+       isEligibleForAliya(mitpallel, type) {
+           if (!mitpallel || this.assignedToday.has(mitpallel.name)) {
+               return false;
            }
    
-           // העתקת הסדר הנוכחי לרשימה הזמנית
-           this.temporaryOrder = new Map(this.orderList);
+           // פעולות בהיכל פתוחות לכולם
+           if (TEMPLE_ACTIONS.includes(type)) {
+               return true;
+           }
+   
+           // בדיקת התאמה לפי סוג העלייה
+           switch(type) {
+               case 'כהן': return mitpallel.type === 'כהן';
+               case 'לוי': return mitpallel.type === 'לוי';
+               default: return mitpallel.type === 'ישראל';
+           }
+       }
+   
+       getNextEligibleForAliya(type, alreadyAssigned = []) {
+           const positions = Array.from(this.temporaryOrder.keys()).sort((a, b) => a - b);
            
-           console.log('אתחול הושלם:', {
-               orderSize: this.orderList.size,
-               tempOrderSize: this.temporaryOrder.size,
-               firstFewEntries: Array.from(this.orderList.entries()).slice(0, 5)
+           for (const pos of positions) {
+               const name = this.temporaryOrder.get(pos);
+               const mitpallel = this.mitpallelimList.find(m => m.name === name);
+               
+               if (!mitpallel) continue;
+               if (this.assignedToday.has(name)) continue;
+               if (alreadyAssigned.includes(name)) continue;
+               
+               if (this.isEligibleForAliya(mitpallel, type)) {
+                   return { congregant: mitpallel, position: pos };
+               }
+           }
+           
+           return null;
+       }
+   
+       async autoAssignAliyot(aliyotTypes) {
+           try {
+               const assignments = new Map();
+               const assignedPeople = [];
+   
+               // פעולות בהיכל
+               for (const action of TEMPLE_ACTIONS) {
+                   const next = this.getNextEligibleForAliya(action, assignedPeople);
+                   if (next) {
+                       assignments.set(action, next.congregant);
+                       assignedPeople.push(next.congregant.name);
+                   }
+               }
+   
+               // עליות לתורה
+               for (const aliyaType of aliyotTypes) {
+                   const next = this.getNextEligibleForAliya(aliyaType, assignedPeople);
+                   if (next) {
+                       assignments.set(aliyaType, next.congregant);
+                       assignedPeople.push(next.congregant.name);
+                   }
+               }
+   
+               return assignments;
+           } catch (error) {
+               console.error('שגיאה בשיבוץ אוטומטי:', error);
+               return new Map();
+           }
+       }
+   
+       async assignAliyah(name, type) {
+           try {
+               if (this.lockedAssignments.has(type)) {
+                   throw new Error('העלייה כבר ננעלה');
+               }
+   
+               const newPosition = this.getLastPosition() + 1;
+               
+               // שמירת השינוי ברשימה זמנית
+               this.temporaryOrder.set(newPosition, name);
+               this.lockedAssignments.add(type);
+               this.assignedToday.add(name);
+               
+               // הוספה לרשימת השינויים לשליחה מרוכזת
+               this.changes.push({
+                   type: 'assignment',
+                   name,
+                   position: newPosition
+               });
+   
+               return true;
+           } catch (error) {
+               console.error('שגיאה בשיבוץ:', error);
+               return false;
+           }
+       }
+   
+       async handleAbsence(name) {
+           try {
+               const currentPos = this.findPersonPosition(name);
+               if (currentPos === null) return false;
+   
+               const positions = Array.from(this.temporaryOrder.keys()).sort((a, b) => a - b);
+               const currentIndex = positions.indexOf(currentPos);
+               const newIndex = Math.min(currentIndex + 5, positions.length - 1);
+               const newPosition = positions[newIndex];
+   
+               // עדכון הסדר הזמני
+               this.movePersonInTemporaryOrder(name, newPosition);
+               
+               // הוספה לרשימת השינויים
+               this.changes.push({
+                   type: 'absence',
+                   name,
+                   position: newPosition
+               });
+   
+               return true;
+           } catch (error) {
+               console.error('שגיאה בטיפול בהיעדרות:', error);
+               return false;
+           }
+       }
+   
+       async handleFreeChoice(originalName, newName, type) {
+           try {
+               if (this.lockedAssignments.has(type)) {
+                   throw new Error('העלייה כבר ננעלה');
+               }
+   
+               const newPosition = this.getLastPosition() + 1;
+               
+               // עדכון הסדר הזמני
+               this.temporaryOrder.set(newPosition, newName);
+               this.assignedToday.add(newName);
+               this.lockedAssignments.add(type);
+   
+               // הוספה לרשימת השינויים
+               this.changes.push({
+                   type: 'free-choice',
+                   name: newName,
+                   position: newPosition
+               });
+   
+               return true;
+           } catch (error) {
+               console.error('שגיאה בבחירה חופשית:', error);
+               return false;
+           }
+       }
+   
+       async submitAllChanges() {
+           try {
+               console.log('שולח את כל השינויים לשרת:', this.changes);
+               
+               for (const change of this.changes) {
+                   await this.submitToGoogleSheets(change.name, change.position);
+               }
+               
+               // ניקוי רשימת השינויים
+               this.changes = [];
+               console.log('כל השינויים נשלחו בהצלחה');
+               
+               return true;
+           } catch (error) {
+               console.error('שגיאה בשליחת השינויים:', error);
+               return false;
+           }
+       }
+   
+       // פונקציות עזר
+   
+       getLastPosition() {
+           const positions = Array.from(this.temporaryOrder.keys());
+           return positions.length > 0 ? Math.max(...positions) : 0;
+       }
+   
+       findPersonPosition(name) {
+           for (const [pos, personName] of this.temporaryOrder.entries()) {
+               if (personName === name) return pos;
+           }
+           return null;
+       }
+   
+       movePersonInTemporaryOrder(name, newPosition) {
+           const oldPosition = this.findPersonPosition(name);
+           if (oldPosition !== null) {
+               this.temporaryOrder.delete(oldPosition);
+           }
+           this.temporaryOrder.set(newPosition, name);
+       }
+   
+       // שליחה לגוגל שיטס
+       async submitToGoogleSheets(name, position) {
+           const formData = new FormData();
+           formData.append(ORDER_FORM_ENTRIES.name, name);
+           formData.append(ORDER_FORM_ENTRIES.position, position.toString());
+   
+           await fetch(ORDER_FORM_URL, {
+               method: 'POST',
+               mode: 'no-cors',
+               body: formData
            });
-           
-           return true;
-       } catch (error) {
-           console.error('שגיאה באתחול:', error);
-           throw error;
+       }
+   
+       // פונקציה נוספת לקבלת רשימה מסודרת
+       getOrderedMitpallelimList() {
+           return Array.from(this.temporaryOrder.entries())
+               .sort((a, b) => a[0] - b[0])
+               .map(([_, name]) => this.mitpallelimList.find(m => m.name === name))
+               .filter(m => m);
        }
    }
-     isEligibleForAliya(mitpallel, type) {
-         if (!mitpallel || this.assignedToday.has(mitpallel.name)) {
-             return false;
-         }
-
-         if (TEMPLE_ACTIONS.includes(type)) {
-             return true;
-         }
-
-         switch(type) {
-             case 'כהן': return mitpallel.type === 'כהן';
-             case 'לוי': return mitpallel.type === 'לוי';
-             default: return mitpallel.type === 'ישראל';
-         }
-     }
-
-     // קבלת המתפלל הבא בתור
-     getNextEligibleForAliya(type, alreadyAssigned = []) {
-         const positions = Array.from(this.temporaryOrder.keys()).sort((a, b) => a - b);
-
-         for (const pos of positions) {
-             const name = this.temporaryOrder.get(pos);
-             const mitpallel = this.mitpallelimList.find(m => m.name === name);
-
-             if (!mitpallel) continue;
-             if (this.assignedToday.has(name)) continue;
-             if (alreadyAssigned.includes(name)) continue;
-
-             if (this.isEligibleForAliya(mitpallel, type)) {
-                 return { mitpallel, position: pos };
-             }
-         }
-
-         return null;
-     }
-
-     // שיבוץ אוטומטי של כל העליות
-     async autoAssignAliyot(aliyotTypes) {
-         try {
-             const assignments = new Map();
-             const assignedPeople = [];
-
-             // פעולות בהיכל
-             for (const action of TEMPLE_ACTIONS) {
-                 const next = this.getNextEligibleForAliya(action, assignedPeople);
-                 if (next) {
-                     assignments.set(action, next.mitpallel);
-                     assignedPeople.push(next.mitpallel.name);
-                 }
-             }
-
-             // עליות לתורה
-             for (const aliyaType of aliyotTypes) {
-                 const next = this.getNextEligibleForAliya(aliyaType, assignedPeople);
-                 if (next) {
-                     assignments.set(aliyaType, next.mitpallel);
-                     assignedPeople.push(next.mitpallel.name);
-                 }
-             }
-
-             return assignments;
-         } catch (error) {
-             console.error('שגיאה בשיבוץ אוטומטי:', error);
-             return new Map();
-         }
-     }
-
-     // שיבוץ עלייה והזזה לסוף
-     async assignAliyah(name, type) {
-         try {
-             if (this.lockedAssignments.has(type)) {
-                 throw new Error('העלייה כבר ננעלה');
-             }
-
-             const newPosition = this.getLastPosition() + 1;
-             await this.submitToGoogleSheets(name, newPosition);
-
-             this.temporaryOrder.set(newPosition, name);
-             this.lockedAssignments.add(type);
-             this.assignedToday.add(name);
-
-             return true;
-         } catch (error) {
-             console.error('שגיאה בשיבוץ:', error);
-             return false;
-         }
-     }
-
-     // טיפול בהיעדרות
-     async handleAbsence(name) {
-         const currentPos = this.findPersonPosition(name);
-         if (currentPos === null) return false;
-
-         try {
-             const positions = Array.from(this.temporaryOrder.keys()).sort((a, b) => a - b);
-             const currentIndex = positions.indexOf(currentPos);
-             const newIndex = Math.min(currentIndex + 5, positions.length - 1);
-             const newPosition = positions[newIndex];
-
-             await this.submitToGoogleSheets(name, newPosition);
-             this.movePersonInTemporaryOrder(name, newPosition);
-
-             return true;
-         } catch (error) {
-             console.error('שגיאה בטיפול בהיעדרות:', error);
-             return false;
-         }
-     }
-
-     // בחירה חופשית
-     async handleFreeChoice(originalName, newName, type) {
-         if (this.lockedAssignments.has(type)) {
-             throw new Error('העלייה כבר ננעלה');
-         }
-
-         try {
-             const newPosition = this.getLastPosition() + 1;
-             await this.submitToGoogleSheets(newName, newPosition);
-
-             this.temporaryOrder.set(newPosition, newName);
-             this.assignedToday.add(newName);
-             this.lockedAssignments.add(type);
-
-             return true;
-         } catch (error) {
-             console.error('שגיאה בבחירה חופשית:', error);
-             return false;
-         }
-     }
-
-     // פונקציות עזר
-     getLastPosition() {
-         const positions = Array.from(this.temporaryOrder.keys());
-         return positions.length > 0 ? Math.max(...positions) : 0;
-     }
-
-     findPersonPosition(name) {
-         for (const [pos, personName] of this.temporaryOrder.entries()) {
-             if (personName === name) return pos;
-         }
-         return null;
-     }
-
-     movePersonInTemporaryOrder(name, newPosition) {
-         const oldPosition = this.findPersonPosition(name);
-         if (oldPosition !== null) {
-             this.temporaryOrder.delete(oldPosition);
-         }
-         this.temporaryOrder.set(newPosition, name);
-     }
-
-     // שליחה לגוגל שיטס
-     async submitToGoogleSheets(name, position) {
-         const formData = new FormData();
-         formData.append(ORDER_FORM_ENTRIES.name, name);
-         formData.append(ORDER_FORM_ENTRIES.position, position.toString());
-
-         await fetch(ORDER_FORM_URL, {
-             method: 'POST',
-             mode: 'no-cors',
-             body: formData
-         });
-     }
- }
        // פונקציות עזר
        function showPanel(panelId) {
            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
